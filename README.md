@@ -1,69 +1,68 @@
-# gnomp - GNOME Backup & Restore Script
+# gnomp - GNOME Settings Backup & Restore Tool
 
-A simple script to backup and restore GNOME settings, extensions, and their configurations. Supports both Wayland and X11 sessions.
-
-## Features
-
-* **Comprehensive Backup:** Backs up GNOME settings (`dconf`), user extensions, and key config directories.
-* **Easy Restore:** Restores all settings and extensions from a single timestamped backup file.
-* **Auto-Reload:** Fully reloads the GNOME Shell and extensions after a restore to apply settings immediately.
-* **Drag-and-Drop:** Supports dragging and dropping the backup file onto the terminal when prompted for the path.
-* **Safe Backups:** Creates timestamped backups to prevent new backups from overwriting old ones.
+A shell script for backing up and restoring GNOME desktop settings, extensions, and configurations.  
+Works with both Wayland and X11 sessions.
 
 ---
 
 ## Requirements
 
-Before running, ensure you have the following tools installed:
+Ensure the following tools are installed before running:
 
-* `dconf` (or `dconf-cli`)
-* `gnome-extensions` (or `gnome-extensions-cli`)
+- `dconf` or `dconf-cli`  
+- `gnome-extensions` or `gnome-extensions-cli`
 
 ---
 
 ## Installation
 
-1.  Save the script as `gnomp.sh`.
-2.  Make the script executable:
-    ```bash
-    chmod +x gnomp.sh
-    ```
+Save the script and make it executable:
+```bash
+chmod +x gnomp.sh
+```
 
 ---
 
 ## Usage
 
-1.  Run the script in your terminal:
-    ```bash
-    ./gnomp.sh
-    ```
-2.  Choose an option from the menu:
-    * **1: Backup** - Creates a new backup of your current settings.
-    * **2: Restore** - Restores your settings from a previous backup.
-3.  If restoring, you will be prompted for the path to the backup file. You can drag and drop the file from your file manager directly into the terminal to paste its full path.
+Run the script from your terminal:
+```bash
+./gnomp.sh
+```
+
+### Menu Options
+
+1. **Backup** – Create a new timestamped backup of your GNOME settings  
+2. **Restore** – Restore settings from a selected backup file
+
+When restoring, you can drag and drop the backup file into the terminal to auto-fill its path.
 
 ---
 
-## Backup Details
+## Backup Contents
 
-### Backup Location
+Backups are saved as `.tar.gz` archives in:
+```
+$HOME/gnome_backup
+```
 
-All backups are saved as `.tar.gz` files in:
-`$HOME/gnome_backup`
+Each archive includes:
 
-### What's Included
-
-Each backup archive contains:
-
-* A full `dconf` export of all GNOME settings.
-* `~/.config`
-* `~/.local/share`
-* `~/.gnome`
-* `~/.local/share/gnome-shell/extensions`
+- Full `dconf` export of GNOME settings  
+- `~/.config`  
+- `~/.local/share`  
+- `~/.gnome`  
+- `~/.local/share/gnome-shell/extensions`
 
 ---
 
 ## Notes
 
-* **On Wayland:** Extensions are reloaded automatically using D-Bus. However, some complex extensions may still require a manual logout and login to fully apply all changes.
-* **On X11:** The script will automatically restart the GNOME Shell to apply the restored settings.
+- On Wayland: Extensions reload automatically via D-Bus. Some may require logout/login to fully apply.  
+- On X11: GNOME Shell is restarted automatically after restore to apply changes.
+
+---
+
+## Exit
+
+Press `Ctrl + C` to cancel or exit the script at any time.
