@@ -1,8 +1,8 @@
-# 💾 GNOME Backup & Restore
+# GNOME Backup & Restore
 
 A simple script to backup and restore GNOME settings, extensions, and their configurations. Supports both Wayland and X11 sessions.
 
-## ✨ Features
+## Features
 
 * **Comprehensive Backup:** Backs up GNOME settings (`dconf`), user extensions, and key config directories.
 * **Easy Restore:** Restores all settings and extensions from a single timestamped backup file.
@@ -12,7 +12,7 @@ A simple script to backup and restore GNOME settings, extensions, and their conf
 
 ---
 
-## 📋 Requirements
+## Requirements
 
 Before running, ensure you have the following tools installed:
 
@@ -21,7 +21,7 @@ Before running, ensure you have the following tools installed:
 
 ---
 
-## 🚀 Installation
+## Installation
 
 1.  Save the script as `gnome_backup_restore.sh`.
 2.  Make the script executable:
