@@ -1,128 +1,99 @@
-#!/usr/bin/env bash
-set -e
+#!/bin/bash
 
-BACKUP_DIR="$HOME/gnome-backup-$(date +%Y%m%d-%H%M%S)"
-RESTORE_DIR="$HOME/gnome-backup-latest"
+BACKUP_DIR="$HOME/gnome_backup"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+mkdir -p "$BACKUP_DIR"
 
-# ====== DEPENDENCY CHECK ======
-check_deps() {
-    echo "Checking required dependencies..."
-    REQUIRED=("curl" "wget" "unzip" "jq" "dconf" "gnome-extensions" "tar" "gsettings")
-    MISSING=()
-
-    for pkg in "${REQUIRED[@]}"; do
-        if ! command -v "$pkg" &>/dev/null; then
-            MISSING+=("$pkg")
-        fi
-    done
-
-    if [ ${#MISSING[@]} -ne 0 ]; then
-        echo "Installing missing packages: ${MISSING[*]}"
-        sudo dnf install -y "${MISSING[@]}"
-    else
-        echo "All required dependencies are installed."
-    fi
-}
-
-# ====== BACKUP ======
 backup() {
-    echo "Starting GNOME backup..."
-    mkdir -p "$BACKUP_DIR"
-
     echo "Backing up GNOME settings..."
-    dconf dump / > "$BACKUP_DIR/dconf-settings.ini"
 
-    echo "Saving list of enabled extensions..."
-    gnome-extensions list --enabled > "$BACKUP_DIR/extensions-list.txt"
+    # Export all dconf settings
+    DCONF_FILE="$BACKUP_DIR/dconf_settings_$TIMESTAMP.txt"
+    dconf dump / > "$DCONF_FILE"
 
-    echo "Backing up local GNOME extensions..."
-    mkdir -p "$BACKUP_DIR/extensions"
-    cp -r ~/.local/share/gnome-shell/extensions/* "$BACKUP_DIR/extensions/" 2>/dev/null || true
+    # Backup user extensions explicitly
+    EXTENSIONS_DIR="$HOME/.local/share/gnome-shell/extensions"
+    EXTENSIONS_BACKUP="$BACKUP_DIR/extensions_$TIMESTAMP"
+    if [ -d "$EXTENSIONS_DIR" ]; then
+        mkdir -p "$EXTENSIONS_BACKUP"
+        cp -r "$EXTENSIONS_DIR"/* "$EXTENSIONS_BACKUP/"
+    fi
 
-    echo "Backing up fonts, icons, and themes..."
-    mkdir -p "$BACKUP_DIR/themes"
-    cp -r ~/.icons ~/.local/share/icons ~/.themes ~/.local/share/themes ~/.fonts ~/.local/share/fonts "$BACKUP_DIR/themes/" 2>/dev/null || true
+    # Create archive with all configs + dconf + extensions
+    BACKUP_FILE="$BACKUP_DIR/gnome_settings_$TIMESTAMP.tar.gz"
+    tar -czf "$BACKUP_FILE" \
+        "$HOME/.config" \
+        "$HOME/.local/share" \
+        "$HOME/.gnome" \
+        "$DCONF_FILE" \
+        -C "$BACKUP_DIR" "$(basename "$EXTENSIONS_BACKUP")"
 
-    echo "Backing up GDM theme if customized..."
-    sudo cp -r /usr/share/gnome-shell/theme "$BACKUP_DIR/gdm-theme" 2>/dev/null || true
-
-    echo "Compressing backup archive..."
-    tar czf "$BACKUP_DIR.tar.gz" -C "$(dirname "$BACKUP_DIR")" "$(basename "$BACKUP_DIR")"
-
-    echo "Backup completed successfully."
-    echo "Backup archive created at: $BACKUP_DIR.tar.gz"
+    echo "Backup complete: $BACKUP_FILE"
 }
 
-# ====== RESTORE ======
 restore() {
-    echo "Starting GNOME restore process..."
-    echo "Enter the path to your backup .tar.gz file:"
-    read -r TARFILE
+    read -rp "Enter the full path of the backup file (drag and drop supported): " BACKUP_FILE
+    BACKUP_FILE="${BACKUP_FILE%\"}"
+    BACKUP_FILE="${BACKUP_FILE#\"}"
 
-    if [ ! -f "$TARFILE" ]; then
-        echo "Error: Backup file not found."
+    if [ ! -f "$BACKUP_FILE" ]; then
+        echo "Backup file not found."
         exit 1
     fi
 
-    mkdir -p "$RESTORE_DIR"
-    tar xzf "$TARFILE" -C "$RESTORE_DIR" --strip-components=1
+    # Extract backup to a temporary directory first
+    TEMP_RESTORE_DIR=$(mktemp -d)
+    tar -xzf "$BACKUP_FILE" -C "$TEMP_RESTORE_DIR"
 
-    echo "Restoring GNOME settings..."
-    dconf load / < "$RESTORE_DIR/dconf-settings.ini"
+    echo "Restoring configuration files..."
+    cp -r "$TEMP_RESTORE_DIR/.config/" "$HOME/.config/"
+    cp -r "$TEMP_RESTORE_DIR/.local/share/" "$HOME/.local/share/"
+    cp -r "$TEMP_RESTORE_DIR/.gnome/" "$HOME/.gnome/"
 
-    echo "Restoring local GNOME extensions..."
-    mkdir -p ~/.local/share/gnome-shell/extensions/
-    cp -r "$RESTORE_DIR/extensions/"* ~/.local/share/gnome-shell/extensions/ 2>/dev/null || true
+    # Restore dconf from the exact file in the backup
+    DCONF_FILE=$(find "$TEMP_RESTORE_DIR" -type f -name "dconf_settings_*.txt" | head -1)
+    if [ -f "$DCONF_FILE" ]; then
+        dconf load / < "$DCONF_FILE"
+        echo "dconf settings restored from $DCONF_FILE"
+    fi
 
-    echo "Reinstalling missing online extensions..."
-    while read -r ext_uuid; do
-        [ -z "$ext_uuid" ] && continue
-        if ! gnome-extensions info "$ext_uuid" &>/dev/null; then
-            echo "Installing extension: $ext_uuid"
-            VERSION=$(gnome-shell --version | awk '{print $3}' | cut -d'.' -f1,2)
-            INFO_URL="https://extensions.gnome.org/extension-info/?uuid=$ext_uuid&shell_version=$VERSION"
-            ZIP_PATH=$(curl -s "$INFO_URL" | grep -oP '(?<=\"download_url\": \")[^\"]*')
-            if [ -n "$ZIP_PATH" ]; then
-                mkdir -p ~/.local/share/gnome-shell/extensions/"$ext_uuid"
-                wget -qO /tmp/ext.zip "https://extensions.gnome.org$ZIP_PATH"
-                unzip -oq /tmp/ext.zip -d ~/.local/share/gnome-shell/extensions/"$ext_uuid"
-                echo "Extension $ext_uuid installed successfully."
-            else
-                echo "Warning: Could not download extension $ext_uuid."
-            fi
-        fi
-        gnome-extensions enable "$ext_uuid" 2>/dev/null || true
-    done < "$RESTORE_DIR/extensions-list.txt"
+    # Restore extensions
+    EXT_BACKUP_DIR=$(find "$TEMP_RESTORE_DIR" -type d -name "extensions_*" | head -1)
+    if [ -d "$EXT_BACKUP_DIR" ]; then
+        mkdir -p "$HOME/.local/share/gnome-shell/extensions"
+        cp -r "$EXT_BACKUP_DIR"/* "$HOME/.local/share/gnome-shell/extensions/"
+    fi
 
-    echo "Restoring themes and fonts..."
-    cp -r "$RESTORE_DIR/themes/"* ~ 2>/dev/null || true
-    sudo cp -r "$RESTORE_DIR/gdm-theme" /usr/share/gnome-shell/theme 2>/dev/null || true
+    echo "Reloading GNOME Shell extensions..."
+    if command -v gnome-extensions >/dev/null 2>&1; then
+        gnome-extensions reset --all
+        gnome-extensions enable $(gnome-extensions list)
+    fi
 
-    echo "Applying restored GNOME settings..."
-    gsettings reset-recursively org.gnome.shell || true
-    gsettings reset-recursively org.gnome.desktop.interface || true
-    gsettings reset-recursively org.gnome.desktop.wm.preferences || true
-    gsettings set org.gnome.shell enabled-extensions "$(cat "$RESTORE_DIR/extensions-list.txt" | jq -R -s -c 'split("\n")[:-1]')"
+    if [ "$XDG_SESSION_TYPE" = "wayland" ]; then
+        echo "Reloading GNOME Shell via D-Bus (Wayland)..."
+        gdbus call \
+            --session \
+            --dest org.gnome.Shell \
+            --object-path /org/gnome/Shell \
+            --method org.gnome.Shell.Eval "global.reexec_self()"
+        echo "Extensions should now be fully applied. Log out and back in if any issues remain."
+    elif [ "$XDG_SESSION_TYPE" = "x11" ]; then
+        echo "Restarting GNOME Shell (X11)..."
+        gnome-shell --replace & disown
+    fi
 
-    echo "Reloading GNOME Shell..."
-    busctl --user call org.gnome.Shell /org/gnome/Shell org.gnome.Shell Eval "s" 'Meta.restart("Restoring GNOME configuration...")' 2>/dev/null || \
-        echo "Please log out and log back in manually to complete the restoration."
-
-    echo "GNOME restore process completed successfully."
+    rm -rf "$TEMP_RESTORE_DIR"
+    echo "Restore complete."
 }
 
-# ====== MENU ======
-check_deps
-echo "======================================"
-echo " Fedora 43 GNOME Backup and Restore Tool"
-echo "======================================"
-echo "1) Backup GNOME"
-echo "2) Restore GNOME"
-echo "Select an option (1/2): "
-read -r CHOICE
+echo "Select an option:"
+echo "1) Backup"
+echo "2) Restore"
+read -rp "Enter choice: " choice
 
-case "$CHOICE" in
+case "$choice" in
     1) backup ;;
     2) restore ;;
-    *) echo "Invalid option selected." ;;
+    *) echo "Invalid choice"; exit 1 ;;
 esac
